@@ -65,4 +65,5 @@ jobs:
             --image $IMAGE_URI \
             --region ${REGION} \
             --platform managed \
+            --port 8080 \
             --allow-unauthenticated
