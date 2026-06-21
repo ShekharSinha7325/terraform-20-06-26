@@ -34,15 +34,12 @@ jobs:
           }}/app-repo/demo-app:${{ github.sha }}" >> $GITHUB_ENV
       - name: Build Image
         run: |
-          IMAGE_URI=us-central1-docker.pkg.dev/${CLOUDSDK_CORE_PROJECT}/app-repo/demo-app:${{ github.sha }}
           docker build -t $IMAGE_URI ./app
       - name: Push Image
         run: |
-          IMAGE_URI=us-central1-docker.pkg.dev/${CLOUDSDK_CORE_PROJECT}/app-repo/demo-app:${{ github.sha }}
           docker push $IMAGE_URI
       - name: Deploy Cloud Run
         run: |
-          IMAGE_URI=us-central1-docker.pkg.dev/${CLOUDSDK_CORE_PROJECT}/app-repo/demo-app:${{ github.sha }}
           gcloud run deploy demo-app \
            --image $IMAGE_URI \
            --region us-central1 \
