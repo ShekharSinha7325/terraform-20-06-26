@@ -3,14 +3,15 @@ name: Deploy to Cloud Run
 on:
   push:
     branches:
-      - main
+      - dev
+      - qa
+      - prod
 
 permissions:
   contents: read
   id-token: write
 
 env:
-  PROJECT_ID: project-c0ec3960-c267-466c-877
   REGION: us-central1
   REPOSITORY: app-repo
   IMAGE_NAME: demo-app
@@ -18,52 +19,70 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: ${{ github.ref_name }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Debug app folder
-        run: ls -la app
-
-      - name: Debug auth secrets presence
+      - name: Set deployment variables by branch
         run: |
-          if [ -z "${{ secrets.WIF_PROVIDER }}" ]; then echo "WIF_PROVIDER is EMPTY"; else echo "WIF_PROVIDER is set"; fi
-          if [ -z "${{ secrets.SERVICE_ACCOUNT }}" ]; then echo "SERVICE_ACCOUNT is EMPTY"; else echo "SERVICE_ACCOUNT is set"; fi
+          if [ "${GITHUB_REF_NAME}" = "dev" ]; then
+            echo "SERVICE_NAME=demo-app-dev" >> $GITHUB_ENV
+          elif [ "${GITHUB_REF_NAME}" = "qa" ]; then
+            echo "SERVICE_NAME=demo-app-qa" >> $GITHUB_ENV
+          elif [ "${GITHUB_REF_NAME}" = "prod" ]; then
+            echo "SERVICE_NAME=demo-app-prod" >> $GITHUB_ENV
+          else
+            echo "Unsupported branch: ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+
+      - name: Load environment secrets
+        run: |
+          echo "PROJECT_ID=${{ secrets.PROJECT_ID }}" >> $GITHUB_ENV
+          echo "WIF_PROVIDER=${{ secrets.WIF_PROVIDER }}" >> $GITHUB_ENV
+          echo "SERVICE_ACCOUNT=${{ secrets.SERVICE_ACCOUNT }}" >> $GITHUB_ENV
 
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
-          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.SERVICE_ACCOUNT }}
+          project_id: ${{ env.PROJECT_ID }}
 
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Configure Docker
-        run: |
-          gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
+        run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
 
-      - name: Set Image Variables
+      - name: Verify app folder
+        run: ls -la ./app
+
+      - name: Set image URI
         run: |
           echo "IMAGE_URI=${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE_NAME}:${GITHUB_SHA}" >> $GITHUB_ENV
 
-      - name: Debug IMAGE_URI
-        run: echo "$IMAGE_URI"
-
-      - name: Build Image
+      - name: Debug values
         run: |
-          docker build -t $IMAGE_URI ./app
+          echo "Branch: ${GITHUB_REF_NAME}"
+          echo "Project: ${PROJECT_ID}"
+          echo "Service: ${SERVICE_NAME}"
+          echo "Image: ${IMAGE_URI}"
 
-      - name: Push Image
-        run: |
-          docker push $IMAGE_URI
+      - name: Build image
+        run: docker build -t "$IMAGE_URI" ./app
 
-      - name: Deploy Cloud Run
+      - name: Push image
+        run: docker push "$IMAGE_URI"
+
+      - name: Deploy to Cloud Run
         run: |
-          gcloud run deploy ${IMAGE_NAME} \
-            --image $IMAGE_URI \
-            --region ${REGION} \
+          gcloud run deploy "$SERVICE_NAME" \
+            --image "$IMAGE_URI" \
+            --project "$PROJECT_ID" \
+            --region "$REGION" \
             --platform managed \
             --port 8080 \
             --allow-unauthenticated
